@@ -2,13 +2,9 @@
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  BarChart3,
   Brain,
-  CheckCircle2,
   ChevronRight,
   CreditCard,
-  LayoutDashboard,
-  LineChart,
   PieChart,
   ShieldCheck,
   Sparkles,
