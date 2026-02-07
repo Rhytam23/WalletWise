@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { FaFilter, FaSearch } from 'react-icons/fa';
 import AppNavbar from '../components/AppNavbar';
@@ -245,7 +245,6 @@ const Transactions = () => {
             <p>A calm snapshot of your money moments this semester.</p>
           </div>
           <div className="header-actions">
-            {/* backto dashboard button removed here. */}
             <button
               className={`advanced-toggle ${showAdvanced ? 'active' : ''}`}
               onClick={() => setShowAdvanced((prev) => !prev)}

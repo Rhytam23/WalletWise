@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AppNavbar from '../components/AppNavbar';
 import './Settings.css';
@@ -110,7 +109,6 @@ const Settings = () => {
             <h1>Personalize Your Dashboard</h1>
             <p>Update personal details, preferences, and financial profile to sharpen insights.</p>
           </div>
-          {/* backto dashboard button removed here. */}
 
         </header>
 

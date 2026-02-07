@@ -218,9 +218,7 @@ const Goals = () => {
             <h1>Make room for tuition, books, and the fun stuff.</h1>
             <p>Track every goal in one place and keep your savings on pace with deadlines.</p>
           </div>
-          <div className="header-actions">
-            {/* backto dashboard button removed here. */}
-          </div>
+          
         </header>
 
       <section className="goals-summary">

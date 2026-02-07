@@ -299,7 +299,6 @@ const Budget = () => {
             >
               ⚙️
             </button>
-            {/* backto dashboard button removed here. */}
 
           </div>
         </header>

@@ -1,5 +1,4 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { Pie, Bar, Line } from 'react-chartjs-2';
 import AppNavbar from '../components/AppNavbar';
 import {
@@ -423,7 +422,6 @@ const Reports = () => {
             <p>{headerNote}</p>
           </div>
           <div className="header-actions">
-            {/* backto dashboard button removed here. */}
 
           </div>
         </header>
