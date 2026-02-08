@@ -314,33 +314,32 @@ WalletWise is designed for:
 </div>
 
 ---
-
 ## 🚀 Getting Started
 
 ### Prerequisites
-
 - Node.js (v16+)
-- MongoDB (v5+)
 - npm or yarn
 
-### Installation
+## Installation
+
+### Frontend Setup
+
+The frontend application is located inside the `frontend/` directory.  
+All npm commands must be executed from this directory.
 
 ```bash
 # Clone the repository
 git clone https://github.com/SoumyaMishra-7/WalletWise.git
 
-# Navigate to project directory
-cd WalletWise
+# Navigate to frontend directory
+cd WalletWise/frontend
 
 # Install dependencies
 npm install
 
-# Set up environment variables
-cp .env.example .env
-
-# Run the application
+# Start the development server
 npm start
-```
+
 
 ---
 
