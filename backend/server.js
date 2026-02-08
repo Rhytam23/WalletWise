@@ -1240,32 +1240,7 @@ app.get('/api/health', (req, res) => {
     database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
-    endpoints: {
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        logout: 'POST /api/auth/logout',
-        profile: 'GET /api/auth/me'
-      },
-      budget: {
-        set: 'POST /api/budget',
-        get: 'GET /api/budget',
-        getCurrent: 'GET /api/budget/current',
-        copyPrevious: 'POST /api/budget/copy-previous',
-        summary: 'GET /api/budget/stats/summary'
-      },
-      savings_goals: {
-        create: 'POST /api/savings-goals',
-        list: 'GET /api/savings-goals'
-      },
-      transactions: {
-        add: 'POST /api/transactions',
-        list: 'GET /api/transactions'
-      },
-      dashboard: {
-        summary: 'GET /api/dashboard/summary'
-      }
-    }
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
   });
 });
 
