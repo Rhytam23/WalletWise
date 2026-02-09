@@ -18,6 +18,7 @@ import {
   PieChart,
 } from "lucide-react";
 import "./Homepage.css";
+import Navbar from '../components/Navbar';
 
 const Homepage = () => {
   const navigate = useNavigate();
@@ -78,43 +79,7 @@ const Homepage = () => {
 
   return (
     <div className="ww-page">
-      {/* Header */}
-      <header className={`ww-header ${scrolled ? "scrolled" : ""}`}>
-        <div className="ww-container ww-nav">
-          <div className="ww-brand" onClick={() => smoothScroll("top")}>
-            <div className="ww-logo-icon">
-              <Wallet size={20} />
-            </div>
-            <span className="ww-logo-text">WalletWise</span>
-          </div>
-
-          <nav className={`ww-nav-links ${isMenuOpen ? "is-open" : ""}`}>
-            <button onClick={() => smoothScroll("about")}>About</button>
-            <button onClick={() => smoothScroll("features")}>Features</button>
-            <button onClick={() => smoothScroll("how")}>How it Works</button>
-            <button onClick={() => smoothScroll("testimonials")}>Stories</button>
-          </nav>
-
-          <div className="ww-nav-actions">
-            <button className="ww-btn-link" onClick={() => navigate("/login")}>
-              Log in
-            </button>
-            <button
-              className="ww-btn ww-btn-primary"
-              onClick={() => navigate("/signup")}
-            >
-              Get Started
-            </button>
-            <button
-              className="ww-menu-toggle"
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-            >
-              <span />
-              <span />
-            </button>
-          </div>
-        </div>
-      </header>
+      <Navbar isMenuOpen={isMenuOpen} setIsMenuOpen={setIsMenuOpen} smoothScroll={smoothScroll} navigate={navigate} />
 
       <main id="top">
         {/* --- HERO SECTION --- */}
@@ -258,7 +223,7 @@ const Homepage = () => {
                     </svg>
                   </div>
                 </motion.div>
-                
+
                 <div className="ww-dot dot-orange"></div>
                 <div className="ww-dot dot-green"></div>
                 <div className="ww-dot dot-blue"></div>
@@ -307,7 +272,7 @@ const Homepage = () => {
                 </li>
               </ul>
             </div>
-            
+
             <div className="ww-content-right">
               <div className="ww-visual-connected">
                 <svg className="ww-connect-lines" viewBox="0 0 500 400">
@@ -316,7 +281,7 @@ const Homepage = () => {
                   <motion.path d="M 250 200 C 250 250, 220 300, 200 340" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeDasharray="6 6" variants={drawLine} initial="hidden" whileInView="visible" viewport={{ once: true }} />
                 </svg>
 
-                <motion.div 
+                <motion.div
                   className="ww-center-node"
                   initial={{ scale: 0 }}
                   whileInView={{ scale: 1 }}
@@ -392,12 +357,12 @@ const Homepage = () => {
                   text: "Generate weekly insights that explain exactly where your money goes.",
                   visual: (
                     <div className="ww-bento-visual">
-                       <div className="chart-row">
-                          <div className="chart-col h-40"></div>
-                          <div className="chart-col h-60"></div>
-                          <div className="chart-col h-80 active"></div>
-                          <div className="chart-col h-50"></div>
-                       </div>
+                      <div className="chart-row">
+                        <div className="chart-col h-40"></div>
+                        <div className="chart-col h-60"></div>
+                        <div className="chart-col h-80 active"></div>
+                        <div className="chart-col h-50"></div>
+                      </div>
                     </div>
                   )
                 },
@@ -426,7 +391,7 @@ const Homepage = () => {
                     <p>{item.text}</p>
                     {item.className === "span-2" && (
                       <div className="ww-bento-link">
-                         Learn more <ArrowUpRight size={16} />
+                        Learn more <ArrowUpRight size={16} />
                       </div>
                     )}
                   </div>
