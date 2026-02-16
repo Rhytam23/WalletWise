@@ -1,0 +1,134 @@
+name: Daily due-date reminders (by difficulty)
+
+on:
+  schedule:
+    # Daily at 09:30 IST = 04:00 UTC (GitHub cron uses UTC)
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Comment daily reminders with computed due date
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+
+            // Difficulty label -> days to finish
+            const SLA = {
+              "difficulty: easy": 2,
+              "difficulty: medium": 4,
+              "difficulty: hard": 7,
+            };
+
+            // Avoid duplicate reminders *on the same day*
+            const today = new Date();
+            const yyyy = today.getUTCFullYear();
+            const mm = String(today.getUTCMonth() + 1).padStart(2, "0");
+            const dd = String(today.getUTCDate()).padStart(2, "0");
+            const dayStamp = `${yyyy}-${mm}-${dd}`;
+            const dailyMarker = `<!-- daily-difficulty-reminder:${dayStamp} -->`;
+
+            // Helper: add days in UTC, return YYYY-MM-DD
+            function addDaysUTC(dateObj, days) {
+              const d = new Date(dateObj);
+              d.setUTCDate(d.getUTCDate() + days);
+              return d;
+            }
+            function isoDate(d) { return d.toISOString().slice(0, 10); }
+
+            // Get all open issues (exclude PRs)
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: "open", per_page: 100
+            });
+
+            for (const issue of issues) {
+              if (issue.pull_request) continue;
+
+              const labels = (issue.labels || []).map(l => (typeof l === "string" ? l : l.name));
+              const diffLabel = Object.keys(SLA).find(l => labels.includes(l));
+              if (!diffLabel) continue;
+
+              // Only remind assigned issues (since due date is based on assignment date)
+              const assignees = (issue.assignees || []).map(a => a.login);
+              if (assignees.length === 0) continue;
+
+              const slaDays = SLA[diffLabel];
+
+              // Find latest assignment event date from timeline/events
+              // Prefer issue events endpoint (stable) which includes 'assigned' events with created_at.
+              // We'll scan events and take the latest 'assigned' event for any assignee.
+              const events = await github.paginate(github.rest.issues.listEvents, {
+                owner, repo, issue_number: issue.number, per_page: 100
+              });
+
+              const assignedEvents = events
+                .filter(e => e.event === "assigned" && e.created_at)
+                .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+              // If the issue was never assigned via an event (rare), fallback to issue.created_at
+              const assignedAt = assignedEvents.length ? new Date(assignedEvents[0].created_at) : new Date(issue.created_at);
+
+              const dueAt = addDaysUTC(assignedAt, slaDays);
+
+              const now = new Date();
+              const msPerDay = 24 * 60 * 60 * 1000;
+              const daysLeft = Math.ceil((dueAt - now) / msPerDay); // can be <= 0
+
+              const dueDateStr = isoDate(dueAt);
+              const assignedDateStr = isoDate(assignedAt);
+
+              // Prevent multiple reminders on same day
+              // (If other bots comment a lot, we only check for our marker in recent comments.)
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issue.number, per_page: 100
+              });
+              const alreadyToday = comments.some(c => (c.body || "").includes(dailyMarker));
+              if (alreadyToday) continue;
+
+              const mentions = assignees.map(u => `@${u}`).join(" ");
+
+              let statusLine = "";
+              if (daysLeft > 0) {
+                statusLine = `✅ **${daysLeft} day(s) left** (due on **${dueDateStr}**)`;
+              } else if (daysLeft === 0) {
+                statusLine = `⚠️ **Due today** (**${dueDateStr}**)`;
+              } else {
+                statusLine = `🚨 **Overdue by ${Math.abs(daysLeft)} day(s)** (was due on **${dueDateStr}**)`;
+              }
+
+              let actionLine = "";
+              if (daysLeft >= 1) {
+                actionLine = `Please share a quick update (progress + any blockers).`;
+              } else {
+                actionLine = `Please complete this **ASAP**. If there’s no progress update soon, the issue may be **reassigned** to someone else.`;
+              }
+
+              const body =
+`${dailyMarker}
+⏰ **Daily Reminder** (${diffLabel})
+
+- Assigned on: **${assignedDateStr}**
+- SLA: **${slaDays} days**
+- ${statusLine}
+
+${mentions}
+${actionLine}
+`;
+
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: issue.number,
+                body
+              });
+
+              console.log(`Reminded #${issue.number} (${diffLabel}) -> ${mentions}`);
+
