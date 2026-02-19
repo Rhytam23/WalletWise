@@ -9,7 +9,7 @@ export const AuthProvider = ({ children }) => {
 
   const refreshSession = useCallback(async () => {
     try {
-      await api.post('/api/auth/refresh');
+      await api.post('/api/auth/refresh', {});
       return true;
     } catch (error) {
       return false;
@@ -75,7 +75,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await api.post('/api/auth/logout');
+    await api.post('/api/auth/logout', {});
     setUser(null);
   };
 
