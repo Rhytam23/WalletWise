@@ -58,7 +58,9 @@ describe('API Client Interceptor', () => {
         // Execute request expecting rejection
         await expect(api.get('/protected')).rejects.toThrow();
 
-        // Verify refresh was called
-        expect(mockRefresh.history.post.length).toBe(1);
+        // Refresh was attempted once, then the client signs out silently.
+        const urls = mockRefresh.history.post.map((req) => req.url);
+        expect(urls.filter((url) => url === '/auth/refresh')).toHaveLength(1);
+        expect(urls).toContain('/auth/logout');
     });
 });
