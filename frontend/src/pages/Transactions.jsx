@@ -1,0 +1,460 @@
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import useDebounce from '../hooks/useDebounce';
+import { Link, useNavigate } from 'react-router-dom';
+import api from '../api/client';
+import { FaFilter, FaSearch } from 'react-icons/fa';
+import Pagination from '../components/Pagination';
+import EmptyState from '../components/EmptyState';
+import Spinner from '../components/Spinner';
+import { ShoppingBag, SearchX } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { formatCurrency as formatMoney } from '../utils/currency';
+import { useVault } from '../context/VaultContext';
+import { decryptNote } from '../services/encryption';
+import VaultUnlock from '../components/Vault/VaultUnlock';
+import { FaLock, FaUnlock } from 'react-icons/fa';
+import './Transactions.css';
+
+const categoryLabelMap = {
+  groceries: 'Food',
+  dining: 'Food',
+  food: 'Food',
+  transport: 'Transport',
+  travel: 'Transport',
+  fun: 'Fun',
+  entertainment: 'Fun',
+  others: 'Other'
+};
+
+const quickFilters = [
+  { id: 'all', label: 'All' },
+  { id: 'month', label: 'This Month' },
+  { id: 'food', label: 'Food', categories: ['groceries', 'dining', 'food'] },
+  { id: 'transport', label: 'Transport', categories: ['transport', 'travel'] },
+  { id: 'fun', label: 'Fun', categories: ['fun', 'entertainment'] }
+];
+
+const moodMeta = {
+  happy: { emoji: '😊', color: '#10b981', label: 'Happy / Excited' },
+  stressed: { emoji: '😰', color: '#ef4444', label: 'Stressed / Tired' },
+  bored: { emoji: '😐', color: '#a3a3a3', label: 'Bored / Impulsive' },
+  sad: { emoji: '😔', color: '#64748b', label: 'Sad / Low' },
+  calm: { emoji: '😌', color: '#0ea5e9', label: 'Calm / Productive' },
+  neutral: { emoji: '😶', color: '#94a3b8', label: 'Neutral' }
+};
+
+const normalizeMood = (value) => {
+  if (!value) return 'neutral';
+  const key = `${value}`.trim().toLowerCase();
+  if (moodMeta[key]) return key;
+  return 'neutral';
+};
+
+const exportColumns = [
+  { key: 'date', label: 'Date' },
+  { key: 'category', label: 'Category' },
+  { key: 'description', label: 'Note' },
+  { key: 'amount', label: 'Amount' },
+  { key: 'mood', label: 'Mood' }
+];
+
+const Transactions = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Vault Mechanics
+  const { isUnlocked, cryptoKey } = useVault();
+  const [showVaultUnlock, setShowVaultUnlock] = useState(false);
+  const [decryptedNotes, setDecryptedNotes] = useState({});
+
+  const handleDecryptClick = async (tx) => {
+    if (!isUnlocked || !cryptoKey) {
+      setShowVaultUnlock(true);
+      return;
+    }
+    try {
+      const plainText = await decryptNote(tx.encryptedData, cryptoKey);
+      setDecryptedNotes(prev => ({ ...prev, [tx._id || tx.id]: plainText }));
+    } catch (err) {
+      console.error("Decryption failed. Invalid vault session.", err);
+    }
+  };
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [limit] = useState(10);
+
+  // Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  // Debounced search — only triggers API call after 300ms of inactivity
+  // Empty string is instantly applied (no debounce on clear for better UX)
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  const [activeQuickFilter, setActiveQuickFilter] = useState('all');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [tagFilter, setTagFilter] = useState(''); // Not active in backend yet, keeping UI
+  const [sortMode, setSortMode] = useState('newest');
+  const abortControllerRef = useRef(null);
+
+  const fetchTransactions = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+
+    setLoading(true);
+    try {
+      const params = {
+        page: currentPage,
+        limit,
+        sort: sortMode,
+        search: debouncedSearch,
+      };
+
+      if (activeQuickFilter !== 'all') {
+        if (activeQuickFilter === 'month') {
+          const now = new Date();
+          params.startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+          params.endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+        } else {
+
+          if (activeQuickFilter === 'food') params.search = 'food';
+          if (activeQuickFilter === 'transport') params.search = 'transport';
+          if (activeQuickFilter === 'fun') params.search = 'fun';
+        }
+      }
+
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
+
+      console.log('Fetching with params:', params);
+
+      const response = await api.get('/api/transactions', { params, signal });
+
+      if (response.data?.success) {
+        setTransactions(response.data.transactions || []);
+        if (response.data.pagination) {
+          setTotalPages(response.data.pagination.pages);
+        }
+      }
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentPage, limit, sortMode, debouncedSearch, activeQuickFilter, startDate, endDate]);
+
+  useEffect(() => {
+    fetchTransactions();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchTransactions]);
+
+  // Reset to page 1 when debounced search or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, activeQuickFilter, sortMode, startDate, endDate]);
+
+
+  const formatCurrency = (amount) => {
+    return formatMoney(amount || 0, user?.currency);
+  };
+
+  const formatDate = (dateString) =>
+    new Date(dateString).toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+
+
+  const buildExportRows = () => {
+    return transactions.map((tx) => {
+      let exportNote = tx.description || '.';
+      if (tx.isEncrypted) {
+        exportNote = decryptedNotes[tx.id || tx._id] || '[LOCKED NOTE]';
+      }
+
+      return {
+        date: formatDate(tx.date),
+        category: tx.category || 'others',
+        description: exportNote,
+        amount: tx.amount,
+        mood: moodMeta[normalizeMood(tx.mood)]?.label || 'Neutral'
+      };
+    });
+  };
+
+  const escapeCsv = (value) => {
+    const stringValue = `${value ?? ''}`.replace(/"/g, '""');
+    return `"${stringValue}"`;
+  };
+
+  const downloadFile = (content, filename, mimeType) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExport = (format) => {
+    if (transactions.length === 0) {
+      alert('No transactions to export.');
+      return;
+    }
+
+    const rows = buildExportRows();
+    const delimiter = format === 'csv' ? ',' : '	';
+    const header = exportColumns.map((col) => escapeCsv(col.label)).join(delimiter);
+    const body = rows
+      .map((row) => exportColumns.map((col) => escapeCsv(row[col.key])).join(delimiter))
+      .join('\n');
+    const content = `${header}\n${body}`;
+    const ext = format === 'csv' ? 'csv' : 'xls';
+    downloadFile(content, `transactions_export.${ext}`, 'text/plain;charset=utf-8;');
+  };
+
+  const handleSkip = async (id) => {
+    if (!window.confirm('Are you sure you want to skip the next occurrence of this recurring transaction?')) return;
+    try {
+      const response = await api.post(`/api/transactions/${id}/skip`);
+      if (response.data?.success) {
+        alert('Next occurrence skipped successfully!');
+        fetchTransactions();
+      }
+    } catch (err) {
+      console.error('Failed to skip transaction:', err);
+      alert(err.response?.data?.message || 'Failed to skip transaction. Please try again.');
+    }
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  if (loading && transactions.length === 0) {
+    return (
+      <div className="transactions-page">
+        <Spinner size={50} text="Loading transactions..." />
+      </div>
+    );
+  }
+
+  return (
+    <div className="transactions-page">
+      <header className="transactions-topbar">
+        <div>
+          <Link to="/dashboard" className="back-link">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Back to Dashboard
+          </Link>
+
+          <span className="eyebrow">Transactions</span>
+          <h1>Stay on top of your spending</h1>
+          <p>A calm snapshot of your money moments this semester.</p>
+        </div>
+
+        <div className="header-actions">
+          <button
+            className={`advanced-toggle ${showAdvanced ? 'active' : ''}`}
+            onClick={() => setShowAdvanced((prev) => !prev)}
+            aria-label="Advanced filters"
+            type="button"
+          >
+            <FaFilter />
+          </button>
+        </div>
+      </header>
+
+      <section className="transactions-toolbar">
+        <div className="search-input compact">
+          <FaSearch />
+          <input
+            type="text"
+            placeholder="Search by note or category"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        <div className="quick-filters">
+          {quickFilters.map((filter) => (
+            <button
+              key={filter.id}
+              type="button"
+              className={`pill ${activeQuickFilter === filter.id ? 'active' : ''}`}
+              onClick={() => setActiveQuickFilter(filter.id)}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {showAdvanced && (
+        <section className="advanced-panel">
+          <div className="advanced-grid">
+            <div className="advanced-block">
+              <label>Date range</label>
+              <div className="date-inputs">
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="advanced-block">
+              <label>Tags (backend support pending)</label>
+              <input
+                type="text"
+                placeholder="meal, commute, club"
+                value={tagFilter}
+                onChange={(e) => setTagFilter(e.target.value)}
+                disabled // Disabled for now as per backend availability
+              />
+            </div>
+
+            <div className="advanced-block">
+              <label>Sort</label>
+              <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="amount-high">Amount high ? low</option>
+                <option value="amount-low">Amount low ? high</option>
+              </select>
+            </div>
+
+            <div className="advanced-block">
+              <label>Export (Current Page)</label>
+              <div className="export-actions">
+                <button onClick={() => handleExport('csv')} className="primary-button">
+                  Export CSV
+                </button>
+
+                <button onClick={() => handleExport('excel')} className="ghost-button">
+                  Export Excel
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="transactions-table">
+        {transactions.length === 0 ? (
+          <EmptyState
+            icon={searchTerm || startDate || endDate || activeQuickFilter !== 'all' ? SearchX : ShoppingBag}
+            title={searchTerm || startDate || endDate || activeQuickFilter !== 'all' ? "No matching transactions" : "No transactions yet"}
+            description={searchTerm || startDate || endDate || activeQuickFilter !== 'all'
+              ? "We couldn't find any transactions for your current filters. Try resetting them or searching for something else."
+              : "You haven't recorded any spending moments yet this semester. Start tracking to see your financial story unfold!"}
+            actionLabel={searchTerm || startDate || endDate || activeQuickFilter !== 'all' ? null : "Add Your First Transaction"}
+            onAction={() => navigate('/add-expense')}
+          />
+        ) : (
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Note</th>
+                  <th>Amount</th>
+                  <th>Mood</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              
+              <tbody>
+                {transactions.map((tx) => {
+                  const moodKey = normalizeMood(tx.mood);
+                  const mood = moodMeta[moodKey] || moodMeta.neutral;
+                  const categoryKey = (tx.category || 'others').toLowerCase();
+                  const categoryLabel = categoryLabelMap[categoryKey] || tx.category || 'Other';
+                  const noteText = tx.description && `${tx.description}`.trim() ? tx.description : '.';
+
+                  let displayNote;
+                  if (tx.isEncrypted) {
+                    displayNote = decryptedNotes[tx.id || tx._id] ? (
+                      <div className="encrypted-note-preview">
+                        <FaUnlock className="vault-tiny-icon text-green-500" />
+                        {decryptedNotes[tx.id || tx._id]}
+                      </div>
+                    ) : (
+                      <button onClick={() => handleDecryptClick(tx)} className="unlock-note-btn">
+                        <FaLock className="vault-tiny-icon" /> Locked Note
+                      </button>
+                    );
+                  } else {
+                    displayNote = noteText;
+                  }
+
+                  return (
+                    <tr key={tx.id || tx._id}>
+                      <td>{formatDate(tx.date)}</td>
+                      <td>{categoryLabel}</td>
+                      <td className="note">{displayNote}</td>
+                      <td className={`amount ${tx.type}`}>{formatCurrency(tx.amount)}</td>
+                      <td>
+                        <span className="mood-pill" style={{ '--mood-color': mood.color }}>
+                          <span className="mood-emoji" aria-hidden="true">
+                            {mood.emoji}
+                          </span>
+                          {mood.label}
+                        </span>
+                      </td>
+                      <td>
+                        {tx.isRecurring && (
+                          <button
+                            className="ghost-button skip-button"
+                            onClick={() => handleSkip(tx._id || tx.id)}
+                            title="Skip Next Occurrence"
+                            style={{ padding: '4px 8px', fontSize: '0.8rem' }}
+                          >
+                            Skip Next
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={handlePageChange}
+            />
+          </>
+        )}
+      </section>
+
+      {showVaultUnlock && (
+        <VaultUnlock
+          onClose={() => setShowVaultUnlock(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+export default Transactions;

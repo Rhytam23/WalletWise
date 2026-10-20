@@ -1,0 +1,100 @@
+.guided-tour-root {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+}
+
+.guided-tour-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.62);
+}
+
+.guided-tour-spotlight {
+  position: fixed;
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.62);
+  border: 2px solid rgba(99, 102, 241, 0.85);
+  pointer-events: none;
+  z-index: 3001;
+}
+
+.guided-tour-tooltip {
+  position: fixed;
+  z-index: 3002;
+  background: var(--bg-card, #ffffff);
+  color: var(--text-main, #0f172a);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  border-radius: 16px;
+  padding: 1rem 1rem 0.9rem;
+  box-shadow: 0 20px 50px rgba(2, 6, 23, 0.3);
+}
+
+.guided-tour-step {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #64748b);
+  font-weight: 700;
+}
+
+.guided-tour-tooltip h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.guided-tour-tooltip p {
+  margin: 0.55rem 0 0;
+  color: var(--text-muted, #64748b);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.guided-tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.tour-action-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tour-action-muted,
+.tour-action-primary {
+  border-radius: 10px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.tour-action-muted {
+  background: transparent;
+  border-color: var(--border-subtle, #e2e8f0);
+  color: var(--text-muted, #64748b);
+}
+
+.tour-action-muted:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tour-action-primary {
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #ffffff;
+}
+
+@media (max-width: 768px) {
+  
+  .guided-tour-tooltip {
+    width: calc(100vw - 24px) !important;
+    left: 12px !important;
+  }
+}

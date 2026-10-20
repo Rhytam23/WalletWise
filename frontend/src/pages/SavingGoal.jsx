@@ -1,0 +1,453 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import { getCurrencySymbol, getCurrencyLocale } from '../utils/currency';
+import './SavingGoal.css';
+import ConfirmDialog from "../components/ConfirmDialog";
+
+const SavingGoal = ({ isOpen, onClose, onGoalCreated }) => {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [timeline, setTimeline] = useState(6); // default 6 months
+  const [formData, setFormData] = useState({
+    name: '',
+    targetAmount: '',
+    currentAmount: '',
+    category: 'Emergency Fund',
+    priority: 'Medium'
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const { user } = useAuth();
+  const currencySymbol = getCurrencySymbol(user?.currency);
+  const locale = getCurrencyLocale(user?.currency);
+
+  const categories = ['Emergency Fund', 'Travel', 'Education', 'Home', 'Vehicle', 'Retirement', 'Wedding', 'Health', 'Gift', 'Other'];
+
+  const priorityOptions = [
+    { value: 'Critical', label: 'Must Have', color: '#FF6B6B' },
+    { value: 'High', label: 'High Priority', color: '#4ECDC4' },
+    { value: 'Medium', label: 'Medium Priority', color: '#FFD166' },
+    { value: 'Low', label: 'Low Priority', color: '#06D6A0' }
+  ];
+
+  // Calculate remaining and monthly needed
+  const targetAmountNum = Number(formData.targetAmount) || 0;
+  const currentAmountNum = Number(formData.currentAmount) || 0;
+  const remaining = Math.max(0, targetAmountNum - currentAmountNum);
+  const monthlyNeeded = timeline > 0 ? Math.ceil(remaining / timeline) : 0;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    console.log('Form submit triggered');
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    // Validation
+    if (!formData.name.trim()) {
+      setError('Please enter a goal name');
+      setLoading(false);
+      return;
+    }
+
+    if (!formData.targetAmount || Number(formData.targetAmount) <= 0) {
+      setError('Please enter a valid target amount');
+      setLoading(false);
+      return;
+    }
+
+    if (timeline <= 0) {
+      setError('Please select a valid timeline');
+      setLoading(false);
+      return;
+    }
+
+    // Calculate target date
+    const targetDate = new Date();
+    targetDate.setMonth(targetDate.getMonth() + timeline);
+
+    console.log('Calculated target date:', targetDate.toISOString());
+
+    // Prepare goal data matching backend model
+    const goalData = {
+      name: formData.name.trim(),
+      description: formData.description || `Saving for ${formData.name}`,
+      targetAmount: parseFloat(formData.targetAmount),
+      currentAmount: parseFloat(formData.currentAmount || 0),
+      targetDate: targetDate.toISOString(),
+      category: formData.category,
+      priority: formData.priority,
+      monthlyContribution: monthlyNeeded,
+      isActive: true
+    };
+
+    console.log('Goal data to send:', goalData);
+
+    try {
+      console.log('Sending request to backend...');
+
+      // ADD TIMEOUT to prevent hanging indefinitely
+      const response = await api.post('/api/savings-goals', goalData, {
+        timeout: 15000
+      });
+
+      console.log('Response received:', response.data);
+
+      if (response.data && response.data.message) {
+        setSuccess(response.data.message);
+      } else {
+        setSuccess('Goal created successfully!');
+      }
+
+      // Call parent callback with the created goal
+      if (onGoalCreated) {
+        onGoalCreated(response.data.goal || response.data);
+      }
+
+      // Reset form after short delay
+      setTimeout(() => {
+        console.log('Closing modal and resetting form');
+        resetForm();
+        if (onClose) onClose();
+      }, 1500);
+    } catch (err) {
+      // Interceptor handles the toast
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOverlayClick = (e) => {
+    if (e.target.classList.contains('savings-modal-overlay')) {
+      handleClose();
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      description: '',
+      targetAmount: '',
+      currentAmount: '',
+      category: 'Emergency Fund',
+      priority: 'Medium'
+    });
+    setTimeline(6);
+    setError('');
+    setSuccess('');
+    setLoading(false);
+  };
+
+  const handleClose = useCallback(() => {
+    if (!loading) {
+      setShowConfirm(true);
+    }
+  }, [loading]);
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      resetForm();
+    }
+  }, [isOpen]);
+
+  // Add keyboard event listener for Escape key
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && isOpen && !loading) {
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, loading, handleClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="savings-modal-overlay" onClick={handleOverlayClick}>
+      <div className="savings-modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="savings-modal-header">
+          <div className="header-left">
+            <h2>Create Savings Goal</h2>
+            <p className="subtitle">Plan and track your financial goals</p>
+          </div>
+
+          <button
+            className="close-savings-btn"
+            onClick={handleClose}
+            disabled={loading}
+            aria-label="Close"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M1 1L15 15M15 1L1 15"
+                stroke="white"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+
+        {error && (
+          <div className="savings-error-alert">
+            <span>⚠️ {error}</span>
+            {error.includes('backend') && (
+              <div className="debug-info">
+                <small>Check: 1) Run backend server (npm start in backend folder), 2) Verify endpoint exists</small>
+              </div>
+            )}
+          </div>
+        )}
+
+        {success && (
+          <div className="savings-success-alert">
+            <span>✅ {success}</span>
+            <div className="success-timer">
+              <div className="timer-bar"></div>
+            </div>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="savings-form">
+          {/* Goal Name */}
+          <div className="savings-form-group">
+            <label htmlFor="goalName">
+              Goal Name *
+            </label>
+
+            <input
+              type="text"
+              id="goalName"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="e.g., New Laptop, Vacation, Emergency Fund"
+              required
+              disabled={loading}
+              className={formData.name ? 'filled' : ''}
+              autoFocus
+            />
+          </div>
+
+          {/* Description (Optional) */}
+          <div className="savings-form-group">
+            <label htmlFor="description">
+              Description (Optional)
+            </label>
+
+            <textarea
+              id="description"
+              value={formData.description || ''}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Add notes about your goal..."
+              rows="3"
+              disabled={loading}
+              maxLength="500"
+            />
+
+            <div className="char-count">
+              {formData.description ? formData.description.length : 0}/500
+            </div>
+          </div>
+
+          {/* Target Amount */}
+          <div className="savings-form-group">
+            <label htmlFor="targetAmount">
+              Target Amount ({currencySymbol}) *
+            </label>
+
+            <div className="amount-input-group">
+              <span className="currency-label">{currencySymbol}</span>
+              <input
+                type="number"
+                id="targetAmount"
+                value={formData.targetAmount}
+                onChange={(e) => setFormData({ ...formData, targetAmount: e.target.value })}
+                placeholder="5000"
+                min="1"
+                step="0.01"
+                required
+                disabled={loading}
+                className={formData.targetAmount ? 'filled' : ''}
+              />
+            </div>
+          </div>
+
+          {/* Current Savings */}
+          <div className="savings-form-group">
+            <label htmlFor="currentAmount">
+              Current Savings ({currencySymbol})
+            </label>
+
+            <div className="amount-input-group">
+              <span className="currency-label">{currencySymbol}</span>
+              <input
+                type="number"
+                id="currentAmount"
+                value={formData.currentAmount}
+                onChange={(e) => setFormData({ ...formData, currentAmount: e.target.value })}
+                placeholder="0"
+                min="0"
+                step="0.01"
+                disabled={loading}
+              />
+            </div>
+            <div className="helper-text">
+              How much have you saved already?
+            </div>
+          </div>
+
+          {/* Priority Level */}
+          <div className="savings-form-group">
+            <label>Priority Level</label>
+            <div className="priority-grid">
+              {priorityOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`priority-btn ${formData.priority === opt.value ? 'active' : ''}`}
+                  onClick={() => setFormData({ ...formData, priority: opt.value })}
+                  disabled={loading}
+                  style={{ '--priority-color': opt.color }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Timeline Selection */}
+          <div className="savings-form-group">
+            <label>Timeline (Months) *</label>
+            <div className="timeline-grid">
+              {[1, 3, 6, 12, 24].map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`timeline-btn ${timeline === m ? 'active' : ''}`}
+                  onClick={() => setTimeline(m)}
+                  disabled={loading}
+                >
+                  {m} {m === 1 ? 'Month' : 'Months'}
+                </button>
+              ))}
+            </div>
+
+            <div className="helper-text">
+              When do you want to achieve this goal?
+            </div>
+          </div>
+
+          {/* Category Dropdown */}
+          <div className="savings-form-group">
+            <label htmlFor="category">Goal Category</label>
+            <select
+              id="category"
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+              disabled={loading}
+            >
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {/* Dynamic Summary Card */}
+          {(formData.targetAmount && Number(formData.targetAmount) > 0) && (
+            <div className="savings-summary-card">
+              <div className="summary-title">
+                <span>📊 Plan Summary</span>
+              </div>
+
+              <div className="summary-grid">
+                <div className="summary-item">
+                  <span className="summary-label">Target:</span>
+                  <span className="summary-value">{currencySymbol}{targetAmountNum.toLocaleString(locale)}</span>
+                </div>
+
+                <div className="summary-item">
+                  <span className="summary-label">Current:</span>
+                  <span className="summary-value">{currencySymbol}{currentAmountNum.toLocaleString(locale)}</span>
+                </div>
+
+                <div className="summary-item">
+                  <span className="summary-label">Remaining:</span>
+                  <span className="summary-value highlight">{currencySymbol}{remaining.toLocaleString(locale)}</span>
+                </div>
+
+                <div className="summary-item">
+                  <span className="summary-label">Timeline:</span>
+                  <span className="summary-value">{timeline} months</span>
+                </div>
+              </div>
+
+              <div className="monthly-section">
+                <div className="monthly-label">Monthly savings needed:</div>
+                <div className="monthly-amount">{currencySymbol}{monthlyNeeded.toLocaleString(locale)}</div>
+                <div className="monthly-note">
+                  Save this amount each month to reach your goal on time
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Form Actions */}
+          <div className="savings-form-actions">
+            <button
+              type="button"
+              className="savings-btn-cancel"
+              onClick={handleClose}
+              disabled={loading}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="submit"
+              className="savings-btn-submit"
+              disabled={loading || !formData.name.trim() || !formData.targetAmount || Number(formData.targetAmount) <= 0}
+            >
+              {loading ? (
+                <>
+                  <span className="spinner"></span>
+                  Creating...
+                </>
+              ) : 'Create Goal'}
+            </button>
+          </div>
+
+          {/* Debug info - only in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="debug-info">
+              <small>
+                Endpoint: http://localhost:5000/api/savings-goals
+              </small>
+            </div>
+          )}
+        </form>
+      </div>
+      
+      <ConfirmDialog
+        isOpen={showConfirm}
+        message="Are you sure you want to close? Any unsaved changes will be lost."
+        onConfirm={() => {
+          setShowConfirm(false);
+          resetForm();
+          onClose();
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
+    </div>
+  );
+};
+
+export default SavingGoal;

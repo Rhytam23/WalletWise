@@ -1,0 +1,697 @@
+const mongoose = require('mongoose');
+const Transaction = require('../models/Transactions');
+const User = require('../models/User');
+const Wallet = require('../models/Wallet');
+const DeletedTransaction = require('../models/DeletedTransaction');
+
+const STRICT_MODE = process.env.STRICT_WALLET_BALANCE === "true";
+const { z } = require('zod');
+const { isValidObjectId } = require('../utils/validation');
+const logTransactionActivity = require("../utils/activityLogger");
+const TransactionActivity = require("../models/TransactionActivity");
+const { processEvent } = require("../utils/gamificationEngine");
+const AppError = require('../utils/appError');
+const catchAsync = require('../utils/catchAsync');
+const gamification = require('../utils/gamification');
+const { escapeRegex } = require('../utils/helpers');
+
+// Local development fallback (no MongoDB replica set)
+const withTransaction = async (operation) => {
+  return await operation(null);
+};
+
+// Returns the date following `from` for a recurrence interval, or null if the
+// interval is not recognised.
+const getNextExecutionDate = (from, interval) => {
+  const next = new Date(from);
+  if (interval === "daily") next.setDate(next.getDate() + 1);
+  else if (interval === "weekly") next.setDate(next.getDate() + 7);
+  else if (interval === "monthly") next.setMonth(next.getMonth() + 1);
+  else return null;
+  return next;
+};
+
+const transactionSchema = z.object({
+  type: z.enum(['income', 'expense']),
+  amount: z.preprocess(
+    (val) => (typeof val === 'string' ? Number(val) : val),
+    z.number().finite().positive("Amount must be greater than 0")
+  ),
+  category: z.string().trim().min(1, "Category is required").toLowerCase(),
+  description: z.string().trim().optional().default(''),
+  paymentMethod: z.string().trim().optional().default('cash'),
+  mood: z.string().trim().optional().default('neutral'),
+  date: z.preprocess(
+    (val) => (val ? new Date(val) : undefined),
+    z.date().optional()
+  ),
+  isRecurring: z.boolean().optional().default(false),
+  recurringInterval: z.enum(['daily', 'weekly', 'monthly']).nullable().optional(),
+  walletId: z.string().nullable().optional(),
+  isEncrypted: z.boolean().optional().default(false),
+  encryptedData: z.string().nullable().optional()
+});
+
+// ================= ADD TRANSACTION =================
+const addTransaction = catchAsync(async (req, res, next) => {
+  const userId = req.userId;
+
+  if (!userId) {
+    return next(new AppError('Unauthorized', 401));
+  }
+
+  const parsed = transactionSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: parsed.error.errors[0]?.message || 'Invalid input'
+    });
+  }
+
+  const {
+    type,
+    amount,
+    category,
+    description,
+    paymentMethod,
+    mood,
+    date,
+    isRecurring,
+    recurringInterval,
+    walletId,
+    isEncrypted,
+    encryptedData
+  } = parsed.data;
+
+  if (walletId) {
+    if (!isValidObjectId(walletId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid wallet ID format'
+      });
+    }
+
+    const wallet = await Wallet.findOne({
+      _id: walletId,
+      'members.user': userId
+    });
+
+    if (!wallet) {
+      return res.status(403).json({
+        success: false,
+        message: 'Wallet not found or access denied'
+      });
+    }
+  }
+
+  // Duplicate Detection (24 hour window)
+  const duplicateWindow = 24 * 60 * 60 * 1000;
+  const sinceDate = new Date(Date.now() - duplicateWindow);
+
+  const possibleDuplicate = await Transaction.findOne({
+    userId,
+    type,
+    amount,
+    category,
+    date: { $gte: sinceDate }
+  });
+
+  if (possibleDuplicate) {
+    return res.status(409).json({
+      success: false,
+      duplicate: true,
+      message: "A similar transaction was recently added. Do you still want to continue?"
+    });
+  }
+
+  const result = await withTransaction(async (session) => {
+    let nextExecutionDate = null;
+
+    if (isRecurring && recurringInterval) {
+      const now = new Date();
+      if (recurringInterval === "daily") now.setDate(now.getDate() + 1);
+      else if (recurringInterval === "weekly") now.setDate(now.getDate() + 7);
+      else if (recurringInterval === "monthly") now.setMonth(now.getMonth() + 1);
+      nextExecutionDate = now;
+    }
+
+    const balanceChange = type === 'income' ? amount : -amount;
+
+    if (walletId) {
+      // Conditional atomic update
+      const query = { _id: walletId };
+      if (STRICT_MODE && balanceChange < 0) {
+        query.balance = { $gte: Math.abs(balanceChange) };
+      }
+      
+      const updatedWallet = await Wallet.findOneAndUpdate(
+        query,
+        { $inc: { balance: balanceChange } },
+        { session, new: true }
+      );
+
+      if (!updatedWallet) {
+        throw new AppError('Insufficient funds in shared wallet or wallet not found', 400);
+      }
+    } else {
+      const query = { _id: userId };
+      if (STRICT_MODE && balanceChange < 0) {
+        query.walletBalance = { $gte: Math.abs(balanceChange) };
+      }
+
+      const updatedUser = await User.findOneAndUpdate(
+        query,
+        { $inc: { walletBalance: balanceChange } },
+        { session, new: true }
+      );
+
+      if (!updatedUser) {
+        throw new AppError('Insufficient personal funds or user not found', 400);
+      }
+    }
+
+    const transaction = new Transaction({
+      userId,
+      type,
+      amount,
+      category,
+      description,
+      paymentMethod,
+      mood,
+      ...(date ? { date } : {}),
+      isRecurring,
+      recurringInterval,
+      nextExecutionDate,
+      walletId: walletId || null,
+      paidBy: walletId ? userId : null,
+      isEncrypted,
+      encryptedData
+    });
+
+    try {
+      await transaction.save({ session });
+    } catch (error) {
+      // The balance was already adjusted: revert it so a failed save cannot
+      // leave the wallet out of sync with the transaction history.
+      if (walletId) {
+        await Wallet.findByIdAndUpdate(walletId, { $inc: { balance: -balanceChange } }, { session });
+      } else {
+        await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -balanceChange } }, { session });
+      }
+      throw error;
+    }
+
+    // Log Activity
+    await logTransactionActivity({
+      userId,
+      transactionId: transaction._id,
+      action: "CREATED"
+    });
+
+    // Gamification Hook
+    const gamificationResult = await gamification.recordUserActivity(userId);
+    let badgeAwarded = null;
+
+    // Check for "First Transaction" badge
+    const count = await Transaction.countDocuments({ userId });
+    if (count === 1) {
+      badgeAwarded = await gamification.awardBadge(userId, 'FIRST_TRANSACTION');
+    }
+
+    return { transaction, gamificationResult, badgeAwarded };
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: 'Transaction added successfully',
+    transaction: result.transaction,
+    gamification: {
+      activity: result.gamificationResult,
+      badge: result.badgeAwarded
+    }
+  });
+});
+
+// ================= GET ALL TRANSACTIONS =================
+const getAllTransactions = catchAsync(async (req, res) => {
+  const userId = req.userId;
+
+  const {
+    page = 1,
+    limit = 10,
+    search,
+    type,
+    startDate,
+    endDate,
+    sort = 'newest',
+    walletId
+  } = req.query;
+
+  const query = {};
+  if (walletId) {
+    if (!isValidObjectId(walletId)) {
+      throw new AppError('Invalid wallet ID format', 400);
+    }
+
+    // Only members of a wallet may read its transactions.
+    const wallet = await Wallet.exists({ _id: walletId, 'members.user': userId });
+    if (!wallet) {
+      throw new AppError('Access denied to this wallet', 403);
+    }
+
+    query.walletId = walletId;
+  } else {
+    query.userId = userId;
+    query.walletId = null; // Only personal transactions
+  }
+
+  // Process due recurring transactions.
+  //
+  // Each occurrence is claimed with a compare-and-set on nextExecutionDate:
+  // the schedule is advanced to its real next date *before* the occurrence is
+  // executed, so two concurrent requests can never execute the same occurrence.
+  // If executing fails (e.g. insufficient funds in STRICT mode, validation
+  // error), the claim is rolled back so the occurrence stays due, the item is
+  // skipped for the rest of this request, and the listing still succeeds.
+  const now = new Date();
+  const failedRecurringIds = [];
+
+  while (true) {
+    const candidate = await Transaction.findOne({
+      _id: { $nin: failedRecurringIds },
+      userId,
+      isRecurring: true,
+      nextExecutionDate: { $lte: now },
+      walletId: null,
+    }).sort({ nextExecutionDate: 1 });
+
+    if (!candidate) break;
+
+    const dueDate = candidate.nextExecutionDate;
+    const nextDate = getNextExecutionDate(dueDate, candidate.recurringInterval);
+
+    if (!nextDate) {
+      // Misconfigured recurrence (unknown interval) - never loop on it.
+      failedRecurringIds.push(candidate._id);
+      continue;
+    }
+
+    // Atomic claim: only succeeds if nobody else advanced this occurrence.
+    const rt = await Transaction.findOneAndUpdate(
+      { _id: candidate._id, nextExecutionDate: dueDate },
+      { $set: { nextExecutionDate: nextDate } },
+      { new: false }
+    );
+
+    if (!rt) continue; // lost the race to a concurrent request
+
+    try {
+      await withTransaction(async (session) => {
+        const balanceChange = rt.type === 'income' ? rt.amount : -rt.amount;
+
+        const userQuery = { _id: rt.userId };
+        if (STRICT_MODE && balanceChange < 0) {
+          userQuery.walletBalance = { $gte: Math.abs(balanceChange) };
+        }
+
+        const updatedUser = await User.findOneAndUpdate(
+          userQuery,
+          { $inc: { walletBalance: balanceChange } },
+          { session, new: true }
+        );
+
+        if (!updatedUser) {
+          throw new AppError('Insufficient personal funds to process recurring transaction', 400);
+        }
+
+        const newTransaction = new Transaction({
+          userId: rt.userId,
+          type: rt.type,
+          amount: rt.amount,
+          category: rt.category,
+          description: rt.description,
+          paymentMethod: rt.paymentMethod,
+          mood: rt.mood,
+          date: new Date()
+        });
+
+        try {
+          await newTransaction.save({ session });
+        } catch (error) {
+          // Revert balance change
+          await User.findByIdAndUpdate(rt.userId, { $inc: { walletBalance: -balanceChange } }, { session });
+          throw error;
+        }
+
+        await logTransactionActivity({
+          userId: rt.userId,
+          transactionId: newTransaction._id,
+          action: "CREATED"
+        });
+      });
+    } catch (error) {
+      // Roll the claim back (only if nobody changed the schedule since) so the
+      // occurrence is retried on a later request instead of being lost, and do
+      // not let one failing recurring item break the whole transactions list.
+      await Transaction.updateOne(
+        { _id: rt._id, nextExecutionDate: nextDate },
+        { $set: { nextExecutionDate: dueDate } }
+      );
+      failedRecurringIds.push(rt._id);
+      console.error(`Recurring transaction ${rt._id} skipped: ${error.message}`);
+    }
+  }
+
+  if (type && type !== 'all') query.type = type;
+
+  if (startDate || endDate) {
+    query.date = {};
+    if (startDate) query.date.$gte = new Date(startDate);
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query.date.$lte = end;
+    }
+  }
+
+  if (search) {
+    // Escape regex metacharacters so user input is treated as a literal
+    // substring, preventing regex-injection and ReDoS via crafted patterns.
+    const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+    query.$or = [{ description: regex }, { category: regex }];
+  }
+
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+  const skip = (pageNum - 1) * limitNum;
+
+  let sortOptions = { date: -1 };
+  if (sort === 'oldest') sortOptions = { date: 1 };
+  else if (sort === 'amount-high') sortOptions = { amount: -1 };
+  else if (sort === 'amount-low') sortOptions = { amount: 1 };
+
+  const transactions = await Transaction.find(query)
+    .sort(sortOptions)
+    .skip(skip)
+    .limit(limitNum);
+
+  const total = await Transaction.countDocuments(query);
+
+  res.json({
+    success: true,
+    transactions,
+    pagination: {
+      total,
+      page: pageNum,
+      pages: Math.ceil(total / limitNum),
+      limit: limitNum
+    }
+  });
+});
+
+// ================= UPDATE =================
+const updateTransaction = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  if (!isValidObjectId(id)) {
+    throw new AppError('Invalid transaction ID format', 400);
+  }
+
+  const oldTransaction = await Transaction.findOne({ _id: id, userId });
+
+  if (!oldTransaction) {
+    throw new AppError('Transaction not found', 404);
+  }
+
+  const parsed = transactionSchema.partial().safeParse(req.body);
+
+  if (!parsed.success) {
+    throw new AppError(parsed.error.errors[0]?.message || 'Invalid input', 400);
+  }
+
+  const updateData = parsed.data;
+
+  // Compute old contribution to wallet balance before mutating the document
+  const oldBalanceEffect = oldTransaction.type === 'income'
+    ? oldTransaction.amount
+    : -oldTransaction.amount;
+
+  Object.assign(oldTransaction, updateData);
+  await oldTransaction.save();
+
+  // Recompute new balance effect and apply the difference
+  const newBalanceEffect = oldTransaction.type === 'income'
+    ? oldTransaction.amount
+    : -oldTransaction.amount;
+
+  const balanceDelta = newBalanceEffect - oldBalanceEffect;
+
+  if (balanceDelta !== 0) {
+    if (oldTransaction.walletId) {
+      await Wallet.findByIdAndUpdate(oldTransaction.walletId, { $inc: { balance: balanceDelta } });
+    } else {
+      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: balanceDelta } });
+    }
+  }
+
+  await logTransactionActivity({
+    userId,
+    transactionId: oldTransaction._id,
+    action: "UPDATED",
+    changes: updateData
+  });
+
+  res.json({
+    success: true,
+    message: 'Transaction updated successfully',
+    transaction: oldTransaction
+  });
+});
+
+// ================= DELETE =================
+const deleteTransaction = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  if (!isValidObjectId(id)) {
+    throw new AppError('Invalid transaction ID format', 400);
+  }
+
+  const transaction = await Transaction.findOne({ _id: id, userId });
+
+  if (!transaction) {
+    throw new AppError('Transaction not found', 404);
+  }
+
+  const balanceChange =
+    transaction.type === 'income'
+      ? -transaction.amount
+      : transaction.amount;
+
+  if (transaction.walletId) {
+    const walletQuery = { _id: transaction.walletId };
+    if (STRICT_MODE && balanceChange < 0) {
+      walletQuery.balance = { $gte: Math.abs(balanceChange) };
+    }
+    const updatedWallet = await Wallet.findOneAndUpdate(walletQuery, {
+      $inc: { balance: balanceChange }
+    });
+    if (!updatedWallet) {
+      throw new AppError('Cannot delete income transaction: Insufficient funds in shared wallet to cover deduction', 400);
+    }
+  } else {
+    const query = { _id: userId };
+    if (STRICT_MODE && balanceChange < 0) {
+      query.walletBalance = { $gte: Math.abs(balanceChange) };
+    }
+    const updatedUser = await User.findOneAndUpdate(query, {
+      $inc: { walletBalance: balanceChange }
+    });
+    if (!updatedUser) {
+      throw new AppError('Cannot delete income transaction: Insufficient personal funds to cover deduction', 400);
+    }
+  }
+
+  try {
+    await Transaction.findByIdAndDelete(id);
+  } catch(e) {
+    // revert
+    if (transaction.walletId) {
+      await Wallet.findByIdAndUpdate(transaction.walletId, { $inc: { balance: -balanceChange } });
+    } else {
+      await User.findByIdAndUpdate(userId, { $inc: { walletBalance: -balanceChange } });
+    }
+    throw e;
+  }
+
+  // Keep a server-side copy so undo can restore the exact original.
+  await DeletedTransaction.create({
+    userId,
+    transactionId: transaction._id,
+    snapshot: transaction.toObject()
+  });
+
+  await logTransactionActivity({
+    userId,
+    transactionId: transaction._id,
+    action: "DELETED"
+  });
+
+  res.json({
+    success: true,
+    message: 'Transaction deleted successfully',
+    deletedTransaction: transaction
+  });
+});
+
+// ================= SKIP OCCURRENCE =================
+const skipNextOccurrence = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const userId = req.userId;
+
+  if (!isValidObjectId(id)) {
+    throw new AppError('Invalid transaction ID format', 400);
+  }
+
+  const transaction = await Transaction.findOne({ _id: id, userId });
+
+  if (!transaction || !transaction.isRecurring || !transaction.nextExecutionDate) {
+    throw new AppError('Transaction is not recurring or has no next execution date', 400);
+  }
+
+  let updatedNextDate = new Date(transaction.nextExecutionDate);
+
+  if (transaction.recurringInterval === "daily")
+    updatedNextDate.setDate(updatedNextDate.getDate() + 1);
+  else if (transaction.recurringInterval === "weekly")
+    updatedNextDate.setDate(updatedNextDate.getDate() + 7);
+  else if (transaction.recurringInterval === "monthly")
+    updatedNextDate.setMonth(updatedNextDate.getMonth() + 1);
+
+  transaction.nextExecutionDate = updatedNextDate;
+  await transaction.save();
+
+  res.json({
+    success: true,
+    message: 'Next occurrence skipped successfully',
+    newNextExecutionDate: updatedNextDate
+  });
+});
+
+// ================= UNDO TRANSACTION =================
+// Restores a transaction from the server-side snapshot taken when it was
+// deleted. The client only says *which* deletion to undo (the id of the deleted
+// transaction); type, amount, wallet etc. never come from the request body.
+const undoTransaction = catchAsync(async (req, res) => {
+  const userId = req.userId;
+  const rawId = req.params.id || req.body?.transactionId || req.body?.deletedTransaction?._id;
+
+  if (!rawId || !isValidObjectId(String(rawId))) {
+    throw new AppError('A valid deleted transaction id is required for undo', 400);
+  }
+
+  // Claim the snapshot atomically so it can only be restored once.
+  const record = await DeletedTransaction.findOneAndDelete({ userId, transactionId: rawId });
+  if (!record) {
+    throw new AppError('Nothing to undo: the deleted transaction was not found or the undo window has expired', 404);
+  }
+
+  const original = record.snapshot;
+  const balanceChange = original.type === 'income' ? original.amount : -original.amount;
+  const restoreSnapshot = () => DeletedTransaction.create({
+    userId,
+    transactionId: record.transactionId,
+    snapshot: original,
+    deletedAt: record.deletedAt
+  });
+
+  // Apply the balance change to the wallet the transaction belonged to.
+  const target = original.walletId
+    ? { model: Wallet, query: { _id: original.walletId }, field: 'balance' }
+    : { model: User, query: { _id: userId }, field: 'walletBalance' };
+
+  if (original.walletId) {
+    const stillMember = await Wallet.exists({ _id: original.walletId, 'members.user': userId });
+    if (!stillMember) {
+      await restoreSnapshot();
+      throw new AppError('Wallet not found or access denied', 403);
+    }
+  }
+
+  if (STRICT_MODE && balanceChange < 0) {
+    target.query[target.field] = { $gte: Math.abs(balanceChange) };
+  }
+
+  const updatedTarget = await target.model.findOneAndUpdate(target.query, {
+    $inc: { [target.field]: balanceChange }
+  });
+
+  if (!updatedTarget) {
+    await restoreSnapshot();
+    throw new AppError(
+      original.walletId
+        ? 'Cannot undo expense: Insufficient funds in shared wallet'
+        : 'Cannot undo expense: Insufficient personal funds',
+      400
+    );
+  }
+
+  let restored;
+  try {
+    // Re-create the document exactly as it was (same _id, wallet, recurrence,
+    // vault fields, timestamps).
+    restored = await Transaction.create(original);
+  } catch (e) {
+    await target.model.updateOne(
+      { _id: target.query._id },
+      { $inc: { [target.field]: -balanceChange } }
+    );
+    await restoreSnapshot();
+    throw e;
+  }
+
+  await logTransactionActivity({
+    userId,
+    transactionId: restored._id,
+    action: "RESTORED"
+  });
+
+  res.json({
+    success: true,
+    message: 'Transaction restored successfully',
+    transaction: restored
+  });
+});
+
+// ================= GET ACTIVITY =================
+const getTransactionActivity = catchAsync(async (req, res) => {
+  const { transactionId } = req.params;
+  const userId = req.userId;
+
+  if (!isValidObjectId(transactionId)) {
+    throw new AppError("Invalid transaction ID", 400);
+  }
+
+  const activities = await TransactionActivity.find({
+    transactionId,
+    userId
+  }).sort({ timestamp: -1 });
+
+  res.json({
+    success: true,
+    activities
+  });
+});
+
+module.exports = {
+  addTransaction,
+  getAllTransactions,
+  updateTransaction,
+  deleteTransaction,
+  undoTransaction,
+  skipNextOccurrence,
+  getTransactionActivity
+};
