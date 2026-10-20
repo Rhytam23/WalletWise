@@ -13,8 +13,8 @@ before you make it.
 
 > **Status:** actively developed. Transactions, budgets, savings goals, subscriptions, shared
 > wallets, reports, gamification and the privacy vault are working. Spending insights, the
-> investment simulator and the decision helper are in the app but still being refined. See the
-> [feature table](#features) for what each one does today.
+> investment simulator and the decision helper are in the app but still being refined. See
+> [Features](#features) for what each one does today.
 
 ## Features
 
@@ -92,11 +92,11 @@ Copy `backend/.env.example` to `backend/.env`. The variables that matter:
 
 | Variable | Needed | Notes |
 | :--- | :--- | :--- |
-| `MONGODB_URI` | yes | local or Atlas connection string |
+| `MONGODB_URI` | yes in production | local or Atlas connection string; in development it defaults to `mongodb://localhost:27017/walletwise` |
 | `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | yes in production | the server refuses to sign tokens without them in production; in development a random per-process secret is used |
 | `FRONTEND_URL` | yes in production | used for CORS and the OAuth redirect |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | no | Google sign-in is skipped when unset |
-| `SMTP_*` | no | verification OTPs, password reset and bill reminder emails |
+| `SMTP_*`, or `BREVO_API_KEY` and `SENDER_EMAIL` | no | verification OTPs, password reset and bill reminder emails |
 | `CLOUD_NAME`, `API_KEY`, `API_SECRET` | no | Cloudinary, for avatar uploads |
 | `STRICT_WALLET_BALANCE=true` | no | reject any operation that would make a balance negative |
 
