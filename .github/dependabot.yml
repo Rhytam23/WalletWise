@@ -1,16 +1,19 @@
 version: 2
 updates:
+  # open-pull-requests-limit: 0 means Dependabot only opens pull requests for
+  # security vulnerabilities, not for every routine version bump.
   - package-ecosystem: npm
     directory: /backend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 0
