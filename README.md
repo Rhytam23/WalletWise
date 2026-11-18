@@ -1,9 +1,54 @@
-# WalletWise
+<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+<a id="readme-top"></a>
 
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-CRA-blue)](https://react.dev/)
-[![Node](https://img.shields.io/badge/Node.js-Express-green)](https://expressjs.com/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose-brightgreen)](https://www.mongodb.com/)
+<!-- PROJECT SHIELDS -->
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+[![License][license-shield]][license-url]
+
+
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+<h3 align="center">WalletWise</h3>
+
+  <p align="center">
+    A personal finance app for students and young professionals that does more than record what you spent.
+    <br />
+    <a href="https://github.com/Rhytam23/WalletWise"><strong>Explore the docs »</strong></a>
+    <br />
+    <br />
+    <a href="https://github.com/Rhytam23/WalletWise/issues/new?labels=bug">Report Bug</a>
+    &middot;
+    <a href="https://github.com/Rhytam23/WalletWise/issues/new?labels=enhancement">Request Feature</a>
+  </p>
+</div>
+
+
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ol>
+</details>
+
+
+<!-- ABOUT THE PROJECT -->
+## About The Project
 
 A personal finance app for students and young professionals that does more than record what
 you spent. It sorts transactions into categories, holds you to a monthly budget, plans for bills
@@ -16,7 +61,8 @@ before you make it.
 > investment simulator and the decision helper are in the app but still being refined. See
 > [Features](#features) for what each one does today.
 
-## Features
+### Features
+
 
 - **Transactions**: income and expenses with category, payment method and mood. Recurring
   transactions run from a background worker and can be skipped one occurrence at a time.
@@ -39,7 +85,8 @@ before you make it.
 - **Accounts**: email and password with OTP email verification and password reset, optional
   Google sign-in, JWT access and refresh cookies, light and dark themes, multiple currencies.
 
-## Stack
+### Stack
+
 
 | Part | Technology |
 | :--- | :--- |
@@ -52,55 +99,8 @@ before you make it.
 | Tests | Jest, Supertest, mongodb-memory-server |
 | Hosting | Frontend on Netlify or Vercel, backend on Render |
 
-## Quick start
+### Security
 
-You need Node.js 18 or newer and a MongoDB instance (local or Atlas).
-
-```bash
-git clone https://github.com/Rhytam23/WalletWise.git
-cd WalletWise
-
-# backend, http://localhost:5000
-cd backend
-npm install
-cp .env.example .env     # fill in MONGODB_URI and the JWT secrets
-npm run dev
-
-# frontend, http://localhost:3000 (second terminal)
-cd frontend
-npm install
-npm start
-```
-
-The frontend talks to the backend at `REACT_APP_API_URL`. Put
-`REACT_APP_API_URL=http://localhost:5000` in `frontend/.env` for local work; without it the
-app calls the hosted backend.
-
-Checks:
-
-```bash
-cd backend && npm test        # 71 tests, in-memory MongoDB, no setup needed
-cd frontend && npm run build  # production build
-```
-
-`npm test` in the frontend has one known failing test (`src/api/client.test.js`, the refresh
-retry case).
-
-## Configuration
-
-Copy `backend/.env.example` to `backend/.env`. The variables that matter:
-
-| Variable | Needed | Notes |
-| :--- | :--- | :--- |
-| `MONGODB_URI` | yes in production | local or Atlas connection string; in development it defaults to `mongodb://localhost:27017/walletwise` |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | yes in production | the server refuses to sign tokens without them in production; in development a random per-process secret is used |
-| `FRONTEND_URL` | yes in production | used for CORS and the OAuth redirect |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | no | Google sign-in is skipped when unset |
-| `SMTP_*`, or `BREVO_API_KEY` and `SENDER_EMAIL` | no | verification OTPs, password reset and bill reminder emails |
-| `CLOUD_NAME`, `API_KEY`, `API_SECRET` | no | Cloudinary, for avatar uploads |
-| `STRICT_WALLET_BALANCE=true` | no | reject any operation that would make a balance negative |
-
-## Security
 
 - **Accounts:** passwords are hashed with bcrypt and need 8+ characters with upper and lower
   case, a number and a special character. Access and refresh tokens live in `httpOnly` cookies
@@ -135,7 +135,8 @@ repository's Security tab ("Report a vulnerability") or message
 **If you deploy it:** generate your own JWT secrets, keep `.env` out of git, and create your own
 Google OAuth credentials (rotate any that were ever committed).
 
-## Project structure
+### Project structure
+
 
 ```text
 WalletWise/
@@ -159,7 +160,89 @@ WalletWise/
 └── LICENSE
 ```
 
-## API
+### Deployment
+
+
+- **Backend:** any Node host (set up for Render). Start with `npm start`, set `NODE_ENV=production`,
+  `FRONTEND_URL` and the variables in [Configuration](#configuration).
+- **Frontend:** `netlify.toml` builds `frontend/` as a single-page app. Set `REACT_APP_API_URL`
+  at build time.
+- **Database:** MongoDB Atlas or any MongoDB; set `MONGODB_URI`.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+### Built With
+
+* [![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
+* [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+* [![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
+* [![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- GETTING STARTED -->
+## Getting Started
+
+### Quick start
+
+
+You need Node.js 18 or newer and a MongoDB instance (local or Atlas).
+
+```bash
+git clone https://github.com/Rhytam23/WalletWise.git
+cd WalletWise
+
+# backend, http://localhost:5000
+cd backend
+npm install
+cp .env.example .env     # fill in MONGODB_URI and the JWT secrets
+npm run dev
+
+# frontend, http://localhost:3000 (second terminal)
+cd frontend
+npm install
+npm start
+```
+
+The frontend talks to the backend at `REACT_APP_API_URL`. Put
+`REACT_APP_API_URL=http://localhost:5000` in `frontend/.env` for local work; without it the
+app calls the hosted backend.
+
+Checks:
+
+```bash
+cd backend && npm test        # 71 tests, in-memory MongoDB, no setup needed
+cd frontend && npm run build  # production build
+```
+
+`npm test` in the frontend has one known failing test (`src/api/client.test.js`, the refresh
+retry case).
+
+### Configuration
+
+
+Copy `backend/.env.example` to `backend/.env`. The variables that matter:
+
+| Variable | Needed | Notes |
+| :--- | :--- | :--- |
+| `MONGODB_URI` | yes in production | local or Atlas connection string; in development it defaults to `mongodb://localhost:27017/walletwise` |
+| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | yes in production | the server refuses to sign tokens without them in production; in development a random per-process secret is used |
+| `FRONTEND_URL` | yes in production | used for CORS and the OAuth redirect |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL` | no | Google sign-in is skipped when unset |
+| `SMTP_*`, or `BREVO_API_KEY` and `SENDER_EMAIL` | no | verification OTPs, password reset and bill reminder emails |
+| `CLOUD_NAME`, `API_KEY`, `API_SECRET` | no | Cloudinary, for avatar uploads |
+| `STRICT_WALLET_BALANCE=true` | no | reject any operation that would make a balance negative |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- USAGE EXAMPLES -->
+## Usage
+
+### API
+
 
 Routes live under `/api/v1` (also reachable as `/api`). `GET /api/health` is open and `GET /`
 lists the endpoints; everything else needs a login. Google sign-in is at `/auth/google`.
@@ -168,7 +251,8 @@ lists the endpoints; everything else needs a login. Google sign-in is at `/auth/
 `savings-goals` · `subscriptions` · `wallets` · `dashboard` · `analytics` · `insights` ·
 `investments` · `gamification` · `vault`
 
-## Testing and CI
+### Testing and CI
+
 
 ```bash
 cd backend && npm test    # 71 tests, in-memory MongoDB replica set
@@ -178,25 +262,59 @@ The tests cover auth, transactions, currency conversion, savings goals, the back
 dependency injection, and a security suite (password policy, deleted-user tokens, wallet access,
 undo, savings-goal races). GitHub Actions in `.github/workflows` run checks on pull requests.
 
-## Deployment
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-- **Backend:** any Node host (set up for Render). Start with `npm start`, set `NODE_ENV=production`,
-  `FRONTEND_URL` and the variables in [Configuration](#configuration).
-- **Frontend:** `netlify.toml` builds `frontend/` as a single-page app. Set `REACT_APP_API_URL`
-  at build time.
-- **Database:** MongoDB Atlas or any MongoDB; set `MONGODB_URI`.
 
+<!-- ROADMAP -->
+## Roadmap
+
+
+Not built yet: budget rollover, custom categories, multi-currency with stored exchange rates,
+CSV import and export, daily and weekly spending limits, structured logging, a mobile app.
+
+See the [open issues](https://github.com/Rhytam23/WalletWise/issues) for a full list of proposed features (and known issues).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- CONTRIBUTING -->
 ## Contributing
+
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Branch from `main`, keep changes focused, run
 `npm test` in `backend/` and `npm run build` in `frontend/`, then open a pull request that says
 what changed and why.
 
-## Roadmap
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Not built yet: budget rollover, custom categories, multi-currency with stored exchange rates,
-CSV import and export, daily and weekly spending limits, structured logging, a mobile app.
 
+<!-- LICENSE -->
 ## License
 
+
 [MIT](LICENSE). Maintained by [Rhytam23](https://github.com/Rhytam23).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- CONTACT -->
+## Contact
+
+Rhytam Biswas - [@Rhytam23](https://github.com/Rhytam23)
+
+Project Link: [https://github.com/Rhytam23/WalletWise](https://github.com/Rhytam23/WalletWise)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/Rhytam23/WalletWise.svg?style=for-the-badge
+[contributors-url]: https://github.com/Rhytam23/WalletWise/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/Rhytam23/WalletWise.svg?style=for-the-badge
+[forks-url]: https://github.com/Rhytam23/WalletWise/network/members
+[stars-shield]: https://img.shields.io/github/stars/Rhytam23/WalletWise.svg?style=for-the-badge
+[stars-url]: https://github.com/Rhytam23/WalletWise/stargazers
+[issues-shield]: https://img.shields.io/github/issues/Rhytam23/WalletWise.svg?style=for-the-badge
+[issues-url]: https://github.com/Rhytam23/WalletWise/issues
+[license-shield]: https://img.shields.io/github/license/Rhytam23/WalletWise.svg?style=for-the-badge
+[license-url]: https://github.com/Rhytam23/WalletWise/blob/main/LICENSE
